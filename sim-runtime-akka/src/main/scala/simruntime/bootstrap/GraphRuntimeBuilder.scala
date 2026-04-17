@@ -44,7 +44,8 @@ object GraphRuntimeBuilder:
       graph: EnrichedGraph,
       systemName: String = "sim-runtime",
       algorithmNames: Set[String] = Set.empty,
-      initiatorNodes: Set[Int] = Set.empty
+      initiatorNodes: Set[Int] = Set.empty,
+      runtimeSeed: Long = 0L
   ): RunningRuntime =
     validateGraph(graph)
     val system = ActorSystem(systemName)
@@ -77,7 +78,8 @@ object GraphRuntimeBuilder:
         allowedOnEdge = allowedOnEdge,
         pdf = nodePdf.getOrElse(id, Map.empty),
         algorithmNames = algorithmNames,
-        isInitiator = initiatorNodes.contains(id)
+        isInitiator = initiatorNodes.contains(id),
+        runtimeSeed = runtimeSeed
       )
     }
 

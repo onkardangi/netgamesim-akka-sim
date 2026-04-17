@@ -9,20 +9,24 @@ final class LeaderElectionTreeAlgorithm extends DistributedAlgorithm:
   override val name: String = "leader-election-tree"
 
   private val CandidateKind = "LE_CAND"
-  private var bestLeaderId: Int = Int.MinValue
+
+  private case class State(bestLeaderId: Int = Int.MinValue)
+
+  /** Best candidate seen so far; updated only from `onStart` / `onMessage` on the embedding node actor's thread. */
+  private var state = State()
 
   override def onStart(ctx: NodeContext): Unit =
-    bestLeaderId = ctx.nodeId
-    ctx.emit(s"algorithm=leader-election-tree node=${ctx.nodeId} bestLeader=$bestLeaderId phase=start")
-    ctx.broadcast(CandidateKind, bestLeaderId.toString)
+    state = State(bestLeaderId = ctx.nodeId)
+    ctx.emit(s"algorithm=leader-election-tree node=${ctx.nodeId} bestLeader=${state.bestLeaderId} phase=start")
+    ctx.broadcast(CandidateKind, state.bestLeaderId.toString)
 
   override def onMessage(ctx: NodeContext, msg: AlgorithmMessage): Unit =
     if msg.kind == CandidateKind then
       parseCandidate(msg.payload).foreach { candidateId =>
-        if candidateId > bestLeaderId then
-          bestLeaderId = candidateId
-          ctx.emit(s"algorithm=leader-election-tree node=${ctx.nodeId} bestLeader=$bestLeaderId phase=update")
-          ctx.broadcast(CandidateKind, bestLeaderId.toString, except = Some(msg.from))
+        if candidateId > state.bestLeaderId then
+          state = State(bestLeaderId = candidateId)
+          ctx.emit(s"algorithm=leader-election-tree node=${ctx.nodeId} bestLeader=${state.bestLeaderId} phase=update")
+          ctx.broadcast(CandidateKind, state.bestLeaderId.toString, except = Some(msg.from))
       }
 
   private def parseCandidate(payload: String): Option[Int] =

@@ -10,6 +10,7 @@ object MetricsCollectorActor:
   case object Snapshot extends Command
   case object StopAndSnapshot extends Command
 
+/** Counts traffic from the event stream; `mutable.Map` counters are actor-local (single-threaded mailbox). */
 final class MetricsCollectorActor(startedAtEpochMs: Long) extends Actor:
   import MetricsCollectorActor.*
 

@@ -46,11 +46,13 @@ object SimMain:
                 return
               case Right(_) => ()
             val initiators = configuredAlgorithmInitiators(config)
+            val runtimeSeed = configuredRuntimeSeed(config)
             val runtime = GraphRuntimeBuilder.start(
               enriched,
               systemName = "sim-cli-run",
               algorithmNames = algorithmNames,
-              initiatorNodes = initiators
+              initiatorNodes = initiators,
+              runtimeSeed = runtimeSeed
             )
             try
               configureTimers(runtime, config) match
@@ -191,6 +193,10 @@ object SimMain:
           )
         }.map(_ => timers.size)
       }
+
+  /** Drives per-node PDF RNG in `NodeActor`; defaults to 0L when unset. */
+  private[simcli] def configuredRuntimeSeed(config: Config): Long =
+    if config.hasPath("sim.runtime.seed") then config.getLong("sim.runtime.seed") else 0L
 
   private def configuredAlgorithms(config: Config): Set[String] =
     if !config.hasPath("sim.runtime.algorithms") then Set.empty

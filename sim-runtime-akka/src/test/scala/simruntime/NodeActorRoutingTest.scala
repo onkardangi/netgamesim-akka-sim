@@ -17,6 +17,12 @@ class NodeActorRoutingTest extends AnyFlatSpecLike with Matchers with BeforeAndA
     system.terminate()
     ()
 
+  "NodeActor.mixRuntimeSeed" should "be deterministic and vary by seed and node id" in {
+    NodeActor.mixRuntimeSeed(42L, 1) shouldBe NodeActor.mixRuntimeSeed(42L, 1)
+    NodeActor.mixRuntimeSeed(42L, 1) should not equal NodeActor.mixRuntimeSeed(43L, 1)
+    NodeActor.mixRuntimeSeed(42L, 1) should not equal NodeActor.mixRuntimeSeed(42L, 2)
+  }
+
   "NodeActor" should "forward only allowed message types to neighbors" in {
     val neighbor = TestProbe()(system)
     val node = system.actorOf(NodeActor.props(1), "routing-node-1")

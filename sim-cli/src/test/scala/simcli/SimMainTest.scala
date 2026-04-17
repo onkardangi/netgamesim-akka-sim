@@ -70,6 +70,14 @@ class SimMainTest extends AnyFlatSpec with Matchers:
     SimMain.validateAlgorithmGraphConstraints(Set("leader-election-tree"), cyclic).isLeft shouldBe true
   }
 
+  "SimMain.configuredRuntimeSeed" should "read sim.runtime.seed when present" in {
+    SimMain.configuredRuntimeSeed(ConfigFactory.parseString("sim.runtime.seed = 99")) shouldBe 99L
+  }
+
+  it should "default to 0 when absent" in {
+    SimMain.configuredRuntimeSeed(ConfigFactory.empty) shouldBe 0L
+  }
+
   "SimMain.buildRunMeta" should "include reproducibility fields" in {
     val cli = SimMain.CliArgs(
       graphPath = Path.of("graph.ngs"),

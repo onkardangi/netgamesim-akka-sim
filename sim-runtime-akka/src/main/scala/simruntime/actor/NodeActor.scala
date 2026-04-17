@@ -10,6 +10,12 @@ import scala.util.Random
 object NodeActor:
   def props(id: Int): Props = Props(new NodeActor(id))
 
+  /** Derives a per-node RNG seed from the global `sim.runtime.seed` and node id (PDF / timer-Pdf traffic). */
+  def mixRuntimeSeed(runtimeSeed: Long, nodeId: Int): Long =
+    val z = runtimeSeed + 0x9e3779b97f4a7c15L + nodeId.toLong
+    val z2 = (z ^ (z >>> 30)) * 0xbf58476d1ce4e5b9L
+    z2 ^ (z2 >>> 27)
+
   sealed trait Msg
   enum TimerMode:
     case Fixed, Pdf
@@ -19,7 +25,8 @@ object NodeActor:
       allowedOnEdge: Map[Int, Set[String]],
       pdf: Map[String, Double],
       algorithmNames: Set[String] = Set.empty,
-      isInitiator: Boolean = false
+      isInitiator: Boolean = false,
+      runtimeSeed: Long = 0L
   ) extends Msg
   final case class ConfigureTimer(
       tickEvery: FiniteDuration,
@@ -41,19 +48,21 @@ object NodeActor:
 final class NodeActor(id: Int) extends Actor with Timers:
   import NodeActor.*
 
+  /* Akka classic: these fields are actor-local mailbox state — only `receive` mutates them (single-threaded per actor). */
   private var neighbors: Map[Int, ActorRef] = Map.empty
   private var allowedOnEdge: Map[Int, Set[String]] = Map.empty
   private var pdf: Map[String, Double] = Map.empty
   private var timerMode: TimerMode = TimerMode.Pdf
   private var fixedMsg: Option[String] = None
-  private val random = new Random(id.toLong)
+  private var pdfRandom: Random = new Random(NodeActor.mixRuntimeSeed(0L, id))
   private var algorithms: List[DistributedAlgorithm] = Nil
 
   override def receive: Receive =
-    case Init(nbrs, allow, pdf0, algorithmNames, isInitiator) =>
+    case Init(nbrs, allow, pdf0, algorithmNames, isInitiator, runtimeSeed) =>
       neighbors = nbrs
       allowedOnEdge = allow
       pdf = pdf0
+      pdfRandom = new Random(NodeActor.mixRuntimeSeed(runtimeSeed, id))
       algorithms = loadAlgorithms(algorithmNames, isInitiator)
       val ctx = buildNodeContext()
       algorithms.foreach(algo => runSafely(algo.name)(algo.onStart(ctx)))
@@ -115,14 +124,14 @@ final class NodeActor(id: Int) extends Actor with Timers:
       val total = pdf.values.sum
       if total <= 0.0 then default
       else
-        val r = random.nextDouble() * total
-        var cumulative = 0.0
+        val r = pdfRandom.nextDouble() * total
         val ordered = pdf.toSeq.sortBy(_._1)
+        val probs = ordered.map(_._2)
+        val cumAfter = probs.scanLeft(0.0)(_ + _).tail
         ordered
-          .find { case (_, p) =>
-            cumulative += p
-            r <= cumulative
-          }
+          .map(_._1)
+          .zip(cumAfter)
+          .find { case (_, cum) => r <= cum }
           .map(_._1)
           .getOrElse(ordered.last._1)
 
