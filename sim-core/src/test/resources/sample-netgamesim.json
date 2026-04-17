@@ -1,0 +1,11 @@
+{
+  "nodes": [
+    {"id":0,"children":0,"props":0,"currentDepth":1,"propValueRange":10,"maxDepth":5,"maxBranchingFactor":3,"maxProperties":5,"storedValue":0.0,"valuableData":false},
+    {"id":1,"children":0,"props":0,"currentDepth":1,"propValueRange":10,"maxDepth":5,"maxBranchingFactor":3,"maxProperties":5,"storedValue":1.0,"valuableData":false},
+    {"id":2,"children":0,"props":0,"currentDepth":1,"propValueRange":10,"maxDepth":5,"maxBranchingFactor":3,"maxProperties":5,"storedValue":2.0,"valuableData":false}
+  ],
+  "edges": [
+    {"actionType":1,"fromId":0,"toId":1,"cost":0.5,"resultingValue":null},
+    {"actionType":2,"fromId":1,"toId":2,"cost":0.25,"resultingValue":3}
+  ]
+}

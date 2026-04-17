@@ -3,6 +3,9 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+### Sim experiment outputs ###
+outputs/
+
 ### IntelliJ IDEA ###
 .idea/
 .idea/modules.xml
