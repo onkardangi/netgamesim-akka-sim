@@ -8,7 +8,9 @@ import simruntime.actor.NodeActor
 import simruntime.actor.NodeActor.TimerMode
 import simruntime.metrics.{MetricsCollectorActor, RunMetrics}
 
-import scala.concurrent.Await
+import org.slf4j.LoggerFactory
+
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.duration.DurationInt
 
@@ -37,15 +39,47 @@ final case class RunningRuntime(system: ActorSystem, nodeRefs: Map[Int, ActorRef
     val fut = (metricsCollector ? MetricsCollectorActor.Snapshot).map(_.asInstanceOf[RunMetrics])(system.dispatcher)
     Right(Await.result(fut, timeout + 200.millis))
 
-  def shutdown(): Unit = system.terminate()
+  /** Poll until every node's WORK queue depth is 0 and in-flight estimates are 0, or `maxWaitMs` elapses. */
+  def waitUntilWorkloadDrained(maxWaitMs: Long, pollMs: Long = 50L): Unit =
+    if nodeRefs.isEmpty then return
+    val log = LoggerFactory.getLogger("simruntime.bootstrap.RunningRuntime")
+    implicit val timeout: Timeout = Timeout(3.seconds)
+    implicit val ec: ExecutionContext = system.dispatcher
+    val deadline = System.currentTimeMillis() + maxWaitMs
+    while System.currentTimeMillis() < deadline do
+      finalizeMetrics() match
+        case Left(_) =>
+          Thread.sleep(pollMs)
+        case Right(metrics) =>
+          val inFlightOk = metrics.inFlightEstimateByEdge.values.forall(_ <= 0L)
+          val depthPairs = Await.result(
+            Future.sequence(nodeRefs.toSeq.map { case (nid, ref) =>
+              (ref ? NodeActor.GetWorkQueueDepth).mapTo[Int].map(t => (nid, t))
+            }),
+            5.seconds
+          )
+          val allZero = depthPairs.forall(_._2 == 0)
+          if inFlightOk && allZero then
+            log.info("Workload drained: WORK queues empty and in-flight edge counts zero")
+            return
+      Thread.sleep(pollMs)
+    log.warn(s"Workload drain wait exceeded ${maxWaitMs}ms; continuing")
+
+  def shutdown(): Unit =
+    val log = LoggerFactory.getLogger("simruntime.bootstrap.RunningRuntime")
+    log.info(s"Terminating ActorSystem ${system.name}")
+    system.terminate()
 
 object GraphRuntimeBuilder:
+  private val log = LoggerFactory.getLogger("simruntime.bootstrap.GraphRuntimeBuilder")
   def start(
       graph: EnrichedGraph,
       systemName: String = "sim-runtime",
       algorithmNames: Set[String] = Set.empty,
       initiatorNodes: Set[Int] = Set.empty,
-      runtimeSeed: Long = 0L
+      runtimeSeed: Long = 0L,
+      workQueueEnabled: Boolean = false,
+      initialWorkUnitsByNode: Map[Int, Int] = Map.empty
   ): RunningRuntime =
     validateGraph(graph)
     val system = ActorSystem(systemName)
@@ -79,10 +113,15 @@ object GraphRuntimeBuilder:
         pdf = nodePdf.getOrElse(id, Map.empty),
         algorithmNames = algorithmNames,
         isInitiator = initiatorNodes.contains(id),
-        runtimeSeed = runtimeSeed
+        runtimeSeed = runtimeSeed,
+        workQueueEnabled = workQueueEnabled,
+        initialWorkSeedCount = initialWorkUnitsByNode.getOrElse(id, 0)
       )
     }
 
+    log.info(
+      s"ActorSystem '$systemName' started: ${nodeIds.size} node(s), algorithms=[${algorithmNames.toSeq.sorted.mkString(",")}], seed=$runtimeSeed"
+    )
     RunningRuntime(system, nodeRefs, metricsCollector)
 
   private def validateGraph(graph: EnrichedGraph): Unit =

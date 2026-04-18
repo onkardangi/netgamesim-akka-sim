@@ -16,7 +16,7 @@ object GraphEnrichment:
       val c = config.getConfig(Root)
       for
         messageTypes <- readMessageTypes(c)
-        defaultPdf <- expandPdfConfig(c.getConfig("defaultPdf"), messageTypes)
+        defaultPdf <- expandPdfConfig(c.getConfig("defaultPdf"), messageTypes, "sim.enrichment.defaultPdf")
         perNodePdfs <- readPerNodePdf(c, messageTypes)
         _ <- validatePerNodeIds(perNodePdfs.keySet, plain)
         defaultEdgeLabel <- readLabel(c, "defaultEdgeLabel", messageTypes)
@@ -32,14 +32,27 @@ object GraphEnrichment:
     else if list.distinct.size != list.size then Left("sim.enrichment.messageTypes contains duplicates")
     else Right(list)
 
-  /** Expands `preset` (and optional `s` for zipf — see [[PdfPreset.zipf]]). */
-  private def expandPdfConfig(cfg: Config, messageTypes: Seq[String]): Either[String, Map[String, Double]] =
-    cfg.getString("preset").trim.toLowerCase match
-      case "uniform" => PdfPreset.uniform(messageTypes)
-      case "zipf" =>
-        val s = if cfg.hasPath("s") then cfg.getDouble("s") else 1.0
-        PdfPreset.zipf(messageTypes, s)
-      case other => Left(s"unknown PDF preset: $other")
+  /** Expands either `preset` (uniform / zipf) or explicit `masses` (must sum to 1.0 — see [[PdfMasses]]). */
+  private def expandPdfConfig(cfg: Config, messageTypes: Seq[String], context: String): Either[String, Map[String, Double]] =
+    val hasPreset = cfg.hasPath("preset")
+    val hasMasses = cfg.hasPath("masses")
+    if hasPreset && hasMasses then
+      Left(s"$context: specify either 'preset' or 'masses', not both")
+    else if hasPreset then
+      cfg.getString("preset").trim.toLowerCase match
+        case "uniform" => PdfPreset.uniform(messageTypes)
+        case "zipf" =>
+          val s = if cfg.hasPath("s") then cfg.getDouble("s") else 1.0
+          PdfPreset.zipf(messageTypes, s)
+        case other => Left(s"unknown PDF preset: $other")
+    else if hasMasses then
+      readMassesConfig(cfg.getConfig("masses"), messageTypes, s"$context.masses")
+    else Left(s"$context: must contain 'preset' (uniform|zipf) or 'masses' { ... }")
+
+  private def readMassesConfig(mCfg: Config, messageTypes: Seq[String], context: String): Either[String, Map[String, Double]] =
+    val keys = mCfg.root().keySet().asScala.toSeq
+    val masses = keys.map(k => k -> mCfg.getDouble(k)).toMap
+    PdfMasses.validate(masses, messageTypes, context)
 
   private def readPerNodePdf(parent: Config, messageTypes: Seq[String]): Either[String, Map[Int, Map[String, Double]]] =
     if !parent.hasPath("perNodePdf") then Right(Map.empty)
@@ -49,7 +62,7 @@ object GraphEnrichment:
       traverse(keys) { key =>
         val idE = scala.util.Try(key.strip().toInt).toEither.left.map(_ => s"perNodePdf: invalid node id key: $key")
         idE.flatMap { id =>
-          expandPdfConfig(pc.getConfig(key), messageTypes).map(m => id -> m)
+          expandPdfConfig(pc.getConfig(key), messageTypes, s"""sim.enrichment.perNodePdf."$key"""").map(m => id -> m)
         }
       }.map(_.toMap)
 

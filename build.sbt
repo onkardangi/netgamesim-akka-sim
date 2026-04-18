@@ -28,6 +28,8 @@ lazy val `sim-runtime-akka` = (project in file("sim-runtime-akka"))
     name := "sim-runtime-akka",
     libraryDependencies ++= Seq(
       "com.typesafe.akka" %% "akka-actor" % "2.6.20",
+      "com.typesafe.akka" %% "akka-slf4j" % "2.6.20",
+      "ch.qos.logback" % "logback-classic" % "1.2.12",
       "io.circe" %% "circe-core" % circeVersion,
       "io.circe" %% "circe-generic" % circeVersion,
       "io.circe" %% "circe-parser" % circeVersion,

@@ -54,4 +54,53 @@ class GraphEnrichmentTest extends AnyFlatSpec with Matchers:
     GraphEnrichment.enrich(tiny, cfg).isLeft shouldBe true
   }
 
+  it should "accept explicit defaultPdf masses that sum to 1.0" in {
+    val cfg = ConfigFactory.parseString("""
+      sim.enrichment {
+        messageTypes = [x, y]
+        defaultPdf {
+          masses {
+            x = 0.25
+            y = 0.75
+          }
+        }
+        defaultEdgeLabel = x
+      }
+      """)
+    val g = GraphEnrichment.enrich(tiny, cfg).getOrElse(fail("expected Right"))
+    g.nodes.find(_.id == 1).map(_.pdf).getOrElse(fail("node 1")) shouldBe Map("x" -> 0.25, "y" -> 0.75)
+  }
+
+  it should "fail when explicit masses do not sum to 1.0" in {
+    val cfg = ConfigFactory.parseString("""
+      sim.enrichment {
+        messageTypes = [x, y]
+        defaultPdf {
+          masses {
+            x = 0.3
+            y = 0.3
+          }
+        }
+        defaultEdgeLabel = x
+      }
+      """)
+    val err = GraphEnrichment.enrich(tiny, cfg).left.toOption.getOrElse(fail("expected Left"))
+    err should include("sum to 1.0")
+    err should include("±")
+  }
+
+  it should "fail when preset and masses are both set" in {
+    val cfg = ConfigFactory.parseString("""
+      sim.enrichment {
+        messageTypes = [x, y]
+        defaultPdf {
+          preset = uniform
+          masses { x = 0.5, y = 0.5 }
+        }
+        defaultEdgeLabel = x
+      }
+      """)
+    GraphEnrichment.enrich(tiny, cfg).left.toOption.get should include("either")
+  }
+
 end GraphEnrichmentTest

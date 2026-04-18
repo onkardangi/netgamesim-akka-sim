@@ -22,7 +22,7 @@ From the repo root:
 sbt "sim-runtime-akka/runMain simruntime.RuntimeSmokeMain"
 ```
 
-Expected output includes a line like:
+Expected output includes a **log line** (timestamp/logger prefix is normal) containing:
 
 `received at node=2 from=1 kind=WORK payload=smoke`
 

@@ -1,6 +1,6 @@
 # Experiments and Reproducibility
 
-This project ships with reproducible experiment profiles and a helper script.
+This project ships with reproducible experiment profiles and a helper script. For **architecture and design** (how enrichment, runtime, and algorithms fit together), see [design.md](design.md). For a **demo script** (graph, run, algorithm metrics), see [demo.md](demo.md).
 
 ## Profiles
 

@@ -1,5 +1,6 @@
 package simruntime
 
+import akka.actor.{Actor, ActorLogging, Props}
 import simcore.model.{EnrichedEdge, EnrichedGraph, EnrichedNode}
 import simruntime.actor.NodeActor
 import simruntime.bootstrap.GraphRuntimeBuilder
@@ -15,11 +16,13 @@ object RuntimeSmokeMain:
     )
 
     val runtime = GraphRuntimeBuilder.start(graph, systemName = "runtime-smoke")
-    val listener = runtime.system.actorOf(akka.actor.Props(new akka.actor.Actor:
-      override def receive: Receive =
-        case r: NodeActor.Received =>
-          println(s"received at node=${r.nodeId} from=${r.from} kind=${r.kind} payload=${r.payload}")
-    ))
+    val listener = runtime.system.actorOf(
+      Props(new Actor with ActorLogging:
+        override def receive =
+          case r: NodeActor.Received =>
+            log.info(s"received at node=${r.nodeId} from=${r.from} kind=${r.kind} payload=${r.payload}")
+      )
+    )
 
     runtime.system.eventStream.subscribe(listener, classOf[NodeActor.Received])
     runtime.nodeRefs(1) ! NodeActor.ExternalInput("WORK", "smoke")

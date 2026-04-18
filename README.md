@@ -23,7 +23,7 @@ Smoke the Akka runtime (in-process, no graph files):
 sbt "sim-runtime-akka/runMain simruntime.RuntimeSmokeMain"
 ```
 
-You should see a line similar to:
+You should see a **log line** (timestamp and logger name may prefix it) containing:
 
 `received at node=2 from=1 kind=WORK payload=smoke`
 
@@ -69,13 +69,17 @@ sbt "sim-cli/runMain simcli.SimMain \
 
 Algorithm-oriented details (message kinds, routing) are summarized in [sim-runtime-akka/README.md](sim-runtime-akka/README.md).
 
+**Architecture and design** (message protocol, edge enforcement, PDFs, algorithms, graph→actors): [docs/design.md](docs/design.md).
+
+**Demo (3–6 minutes):** graph → live run → metrics for both algorithms — step-by-step [docs/demo.md](docs/demo.md).
+
 ## Configuration
 
 Experiment files use [HOCON](https://github.com/lightbend/config/blob/main/HOCON.md) with two main blocks:
 
-1. **`sim.enrichment`** — Declares `messageTypes`, `defaultPdf` (e.g. `uniform` or `zipf`), `defaultEdgeLabel`, and optional `perEdgeLabels` / `perNodePdf`. Edge keys look like `"0_1"` for an edge from node `0` to `1`.
+1. **`sim.enrichment`** — Declares `messageTypes`, `defaultPdf` (either **`preset = uniform` / `zipf`** or explicit **`masses { … }`** with probabilities that **sum to 1.0** within tolerance `PdfMasses.SumTolerance`), `defaultEdgeLabel`, and optional `perEdgeLabels` / `perNodePdf`. Edge keys look like `"0_1"` for an edge from node `0` to `1`.
 
-2. **`sim.runtime`** — `seed`, `algorithms` (e.g. `"lai-yang"`, `"leader-election-tree"`), `algorithmInitiators`, and optional `initiators.timers` for periodic traffic.
+2. **`sim.runtime`** — `seed`, `algorithms` (e.g. `"lai-yang"`, `"leader-election-tree"`), `algorithmInitiators`, optional `initiators.timers` for periodic traffic, and optional **`terminatingWorkload`** (per-node seeded WORK units + `waitForDrain` for FIFO work-queue / drain semantics; see [docs/design.md](docs/design.md)).
 
 Full examples: `conf/experiments/*.conf`.
 
@@ -110,4 +114,4 @@ Dependency resolution uses the resolvers in `build.sbt` / `project/akka.sbt` (in
 
 ---
 
-For experiment naming, outputs, and reproducibility fields, see [docs/experiments.md](docs/experiments.md).
+For experiment naming, outputs, and reproducibility fields, see [docs/experiments.md](docs/experiments.md). For a **recorded/live demo** outline, see [docs/demo.md](docs/demo.md).

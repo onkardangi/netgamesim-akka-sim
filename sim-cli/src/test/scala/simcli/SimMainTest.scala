@@ -78,6 +78,57 @@ class SimMainTest extends AnyFlatSpec with Matchers:
     SimMain.configuredRuntimeSeed(ConfigFactory.empty) shouldBe 0L
   }
 
+  "SimMain.configuredTerminatingWorkload" should "default when block absent" in {
+    SimMain.configuredTerminatingWorkload(ConfigFactory.empty) shouldBe TerminatingWorkload(
+      enabled = false,
+      perNodeWorkUnits = Map.empty,
+      waitForDrain = false
+    )
+  }
+
+  it should "parse enabled and per-node work units without waitForDrain" in {
+    val cfg = ConfigFactory.parseString("""
+      sim.runtime.terminatingWorkload {
+        enabled = true
+        perNodeWorkUnits { "1" = 4, "2" = 2 }
+      }
+    """)
+    SimMain.configuredTerminatingWorkload(cfg) shouldBe TerminatingWorkload(
+      enabled = true,
+      perNodeWorkUnits = Map(1 -> 4, 2 -> 2),
+      waitForDrain = false
+    )
+  }
+
+  it should "set waitForDrain only when enabled and waitForDrain is true" in {
+    val withDrain = ConfigFactory.parseString("""
+      sim.runtime.terminatingWorkload {
+        enabled = true
+        waitForDrain = true
+        perNodeWorkUnits { "0" = 1 }
+      }
+    """)
+    SimMain.configuredTerminatingWorkload(withDrain).waitForDrain shouldBe true
+
+    val disabled = ConfigFactory.parseString("""
+      sim.runtime.terminatingWorkload {
+        enabled = false
+        waitForDrain = true
+      }
+    """)
+    SimMain.configuredTerminatingWorkload(disabled).waitForDrain shouldBe false
+  }
+
+  it should "accept legacy perNodeTokens key" in {
+    val cfg = ConfigFactory.parseString("""
+      sim.runtime.terminatingWorkload {
+        enabled = true
+        perNodeTokens { "7" = 2 }
+      }
+    """)
+    SimMain.configuredTerminatingWorkload(cfg).perNodeWorkUnits shouldBe Map(7 -> 2)
+  }
+
   "SimMain.buildRunMeta" should "include reproducibility fields" in {
     val cli = SimMain.CliArgs(
       graphPath = Path.of("graph.ngs"),

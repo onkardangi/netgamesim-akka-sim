@@ -13,18 +13,32 @@ import simruntime.metrics.{RunMetrics, RunMetricsJson}
 
 import java.nio.file.{Files, Path}
 import java.nio.charset.StandardCharsets
+import org.slf4j.LoggerFactory
 import scala.concurrent.ExecutionContext
 import scala.io.Source
 import scala.jdk.CollectionConverters.*
 import scala.util.Try
 
+/** Optional `sim.runtime.terminatingWorkload` block (see docs/design.md). */
+private[simcli] final case class TerminatingWorkload(
+    enabled: Boolean,
+    /** Initial seeded WORK units per node id (`sim.runtime.terminatingWorkload.perNodeWorkUnits` or legacy `perNodeTokens`). */
+    perNodeWorkUnits: Map[Int, Int],
+    waitForDrain: Boolean
+)
+
 object SimMain:
+  private val log = LoggerFactory.getLogger("simcli.SimMain")
+
   def main(args: Array[String]): Unit =
     parseArgs(args.toList) match
       case Left(err) =>
-        System.err.println(err)
+        log.error(err)
         printUsage()
       case Right(cli) =>
+        log.info(
+          s"Starting simulation: graph=${cli.graphPath} config=${cli.configPath} mode=${cli.mode} durationMs=${cli.durationMs}"
+        )
         val graphContent = readFile(cli.graphPath)
         val config = ConfigFactory.parseFile(cli.configPath.toFile).resolve()
 
@@ -36,28 +50,31 @@ object SimMain:
 
         result match
           case Left(err) =>
-            System.err.println(s"Failed: $err")
+            log.error(s"Failed to parse/enrich graph: $err")
           case Right(enriched) =>
-            println(s"Parsed graph nodes=${enriched.nodeCount}, edges=${enriched.edgeCount}")
+            log.info(s"Parsed graph nodes=${enriched.nodeCount}, edges=${enriched.edgeCount}")
             val algorithmNames = configuredAlgorithms(config)
             validateAlgorithmGraphConstraints(algorithmNames, enriched) match
               case Left(err) =>
-                System.err.println(s"Failed: $err")
+                log.error(s"Validation failed: $err")
                 return
               case Right(_) => ()
             val initiators = configuredAlgorithmInitiators(config)
             val runtimeSeed = configuredRuntimeSeed(config)
+            val tw = configuredTerminatingWorkload(config)
             val runtime = GraphRuntimeBuilder.start(
               enriched,
               systemName = "sim-cli-run",
               algorithmNames = algorithmNames,
               initiatorNodes = initiators,
-              runtimeSeed = runtimeSeed
+              runtimeSeed = runtimeSeed,
+              workQueueEnabled = tw.enabled,
+              initialWorkUnitsByNode = tw.perNodeWorkUnits
             )
             try
               configureTimers(runtime, config) match
-                case Left(err) => System.err.println(s"Timer configuration warning: $err")
-                case Right(count) => println(s"Configured timer initiators: $count")
+                case Left(err) => log.warn(s"Timer configuration warning: $err")
+                case Right(count) => log.info(s"Configured timer initiators: $count")
 
               cli.mode match
                 case CliMode.File =>
@@ -65,7 +82,7 @@ object SimMain:
                     throw new IllegalArgumentException("--inject-file is required in file mode")
                   }
                   val injections = parseInjectionFile(injectPath)
-                  runFileMode(runtime, injections, cli.durationMs.getOrElse(1500L))
+                  runFileMode(runtime, injections, cli.durationMs.getOrElse(1500L), tw)
                 case CliMode.Interactive =>
                   runInteractiveMode(runtime)
               val outDir = cli.outDir.getOrElse(defaultOutDir())
@@ -198,6 +215,24 @@ object SimMain:
   private[simcli] def configuredRuntimeSeed(config: Config): Long =
     if config.hasPath("sim.runtime.seed") then config.getLong("sim.runtime.seed") else 0L
 
+  /** Optional `sim.runtime.terminatingWorkload` — per-node seeded WORK units and drain-wait (see docs/design.md). */
+  private[simcli] def configuredTerminatingWorkload(config: Config): TerminatingWorkload =
+    if !config.hasPath("sim.runtime.terminatingWorkload") then TerminatingWorkload(false, Map.empty, false)
+    else
+      val c = config.getConfig("sim.runtime.terminatingWorkload")
+      val enabled = c.hasPath("enabled") && c.getBoolean("enabled")
+      val waitForDrain = enabled && c.hasPath("waitForDrain") && c.getBoolean("waitForDrain")
+      val perNode =
+        def parseMap(path: String): Map[Int, Int] =
+          val pc = c.getConfig(path)
+          pc.root().keySet().asScala.toSeq.flatMap { k =>
+            scala.util.Try(k.strip().toInt).toOption.map(id => id -> pc.getInt(k))
+          }.toMap
+        if c.hasPath("perNodeWorkUnits") then parseMap("perNodeWorkUnits")
+        else if c.hasPath("perNodeTokens") then parseMap("perNodeTokens")
+        else Map.empty[Int, Int]
+      TerminatingWorkload(enabled, perNode, waitForDrain)
+
   private def configuredAlgorithms(config: Config): Set[String] =
     if !config.hasPath("sim.runtime.algorithms") then Set.empty
     else config.getStringList("sim.runtime.algorithms").asScala.map(_.trim).filter(_.nonEmpty).toSet
@@ -260,7 +295,8 @@ object SimMain:
   private def runFileMode(
       runtime: simruntime.bootstrap.RunningRuntime,
       injections: List[Injection],
-      durationMs: Long
+      durationMs: Long,
+      tw: TerminatingWorkload
   ): Unit =
     given ExecutionContext = runtime.system.dispatcher
     injections.foreach { inj =>
@@ -268,25 +304,31 @@ object SimMain:
         scala.concurrent.duration.DurationLong(inj.atMs).millis
       ) {
         runtime.inject(inj.nodeId, inj.kind, inj.payload) match
-          case Left(err) => System.err.println(s"injection failed: $err")
+          case Left(err) => log.error(s"injection failed: $err")
           case Right(_) => ()
       }
     }
-    println(s"Scheduled ${injections.size} injections. Waiting ${durationMs}ms.")
-    Thread.sleep(durationMs)
+    if tw.waitForDrain then
+      log.info(
+        s"Scheduled ${injections.size} injections. Waiting until workload drains or ${durationMs}ms cap (terminatingWorkload)."
+      )
+      runtime.waitUntilWorkloadDrained(durationMs)
+    else
+      log.info(s"Scheduled ${injections.size} injections. Waiting ${durationMs}ms.")
+      Thread.sleep(durationMs)
 
   private def runInteractiveMode(runtime: simruntime.bootstrap.RunningRuntime): Unit =
-    println("Interactive mode. Commands: inject <nodeId> <kind> <payload> | quit")
+    log.info("Interactive mode. Commands: inject <nodeId> <kind> <payload> | quit")
     Iterator
       .continually(scala.io.StdIn.readLine())
       .takeWhile(line => line != null && line.trim.toLowerCase != "quit")
       .foreach { line =>
         parseInteractiveCommand(line) match
-          case Left(err) => System.err.println(err)
+          case Left(err) => log.warn(err)
           case Right(inj) =>
             runtime.inject(inj.nodeId, inj.kind, inj.payload) match
-              case Left(err) => System.err.println(err)
-              case Right(_) => println(s"injected to node=${inj.nodeId} kind=${inj.kind}")
+              case Left(err) => log.error(err)
+              case Right(_) => log.info(s"Injected to node=${inj.nodeId} kind=${inj.kind}")
       }
 
   private[simcli] def writeOutputs(
@@ -298,16 +340,16 @@ object SimMain:
       config: Config
   ): Unit =
     runtime.finalizeMetrics() match
-      case Left(err) => System.err.println(s"could not finalize metrics: $err")
+      case Left(err) => log.error(s"Could not finalize metrics: $err")
       case Right(metrics) =>
         Files.createDirectories(outDir)
         val metricsPath = outDir.resolve("metrics.json")
         Files.writeString(metricsPath, RunMetricsJson.toJson(metrics), StandardCharsets.UTF_8)
-        println(s"Wrote metrics to $metricsPath")
+        log.info(s"Wrote metrics to $metricsPath (durationMs=${metrics.durationMs})")
         val runMeta = buildRunMeta(cli, algorithmNames, initiators, config, metrics)
         val metaPath = outDir.resolve("run-meta.json")
         Files.writeString(metaPath, runMeta.asJson.spaces2, StandardCharsets.UTF_8)
-        println(s"Wrote run metadata to $metaPath")
+        log.info(s"Wrote run metadata to $metaPath")
 
   private[simcli] def buildRunMeta(
       cli: CliArgs,
@@ -367,7 +409,7 @@ object SimMain:
     }
 
   private def printUsage(): Unit =
-    println(
+    log.info(
       "Usage: sim-cli/runMain simcli.SimMain --graph <path> --config <path> --mode <file|interactive> " +
         "[--inject-file <path>] [--duration-ms <ms>] [--out <dir>]"
     )
