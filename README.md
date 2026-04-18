@@ -52,6 +52,8 @@ sbt "sim-cli/runMain simcli.SimMain \
 - **`--mode interactive`**: type `inject <nodeId> <kind> <payload>` or `quit` (no `--inject-file`).
 - Omitting **`--out`** defaults to `outputs/run-<timestamp>/`.
 
+**NetGameSim-generated `.ngs`:** After you build `netmodelsim.jar` in the submodule and produce a JSON `.ngs` (see [NetGameSim/README.md](NetGameSim/README.md)), pass its path as **`--graph`**. For **Lai–Yang** on an arbitrary graph use **`conf/experiments/demo-netgamesim-laiyang.conf`**; for a parse-only smoke run use **`conf/experiments/netgamesim-generated-smoke.conf`**. Edge labels and leader-election tree constraints are spelled out in [docs/experiments.md](docs/experiments.md).
+
 **Leader-election** configs require a **tree** topology; use e.g. `sim-core/src/test/resources/sample-tree-bidir-netgamesim.json` (see `scripts/run-experiments.sh`).
 
 ## Repository layout
@@ -71,7 +73,7 @@ Algorithm-oriented details (message kinds, routing) are summarized in [sim-runti
 
 **Architecture and design** (message protocol, edge enforcement, PDFs, algorithms, graph→actors): [docs/design.md](docs/design.md).
 
-**Demo (3–6 minutes):** graph → live run → metrics for both algorithms — step-by-step [docs/demo.md](docs/demo.md).
+**Project demo (video):** [YouTube — netgamesim-akka-sim walkthrough](https://youtu.be/-F2ZuVzfGS8). 
 
 ## Configuration
 
@@ -114,4 +116,4 @@ Dependency resolution uses the resolvers in `build.sbt` / `project/akka.sbt` (in
 
 ---
 
-For experiment naming, outputs, and reproducibility fields, see [docs/experiments.md](docs/experiments.md). For a **recorded/live demo** outline, see [docs/demo.md](docs/demo.md).
+For experiment naming, outputs, and reproducibility fields, see [docs/experiments.md](docs/experiments.md). **Project demo:** [YouTube](https://youtu.be/-F2ZuVzfGS8). For a **recorded/live demo** outline, see [docs/demo.md](docs/demo.md).
