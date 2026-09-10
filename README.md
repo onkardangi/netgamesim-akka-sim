@@ -1,6 +1,8 @@
 # netgamesim-akka-sim
 
-Distributed graph **simulation on top of Akka Classic**: each node in a graph is an actor, edges define which message kinds may traverse which links, and optional algorithms (Lai–Yang snapshot, tree leader election) run on the same message substrate. Graphs are loaded from **NetGameSim-style JSON** (see below), then **enriched** with per-node PDFs and per-edge labels from Typesafe Config.
+netgamesim-akka-sim is a reproducible distributed-graph simulation framework built on Akka Classic. Each graph node runs as an independent actor, edges enforce which message types may traverse each link, and pluggable algorithms such as Lai–Yang snapshots and tree leader election run on the same message-passing substrate.
+
+The SBT multi-project includes NetGameSim JSON parsing, configurable graph enrichment, an Akka runtime, file-driven and interactive CLI modes, seeded experiment profiles, structured metrics, and automated routing and algorithm tests. [Watch the project walkthrough](https://youtu.be/-F2ZuVzfGS8).
 
 This repository is an **SBT multi-project** at the repo root. A **vendored [NetGameSim](https://github.com/0x1DOCD00D/NetGameSim)** tree may appear under `NetGameSim/` / `netgamesim/` as **git submodules** (see `.gitmodules`) for generating new graphs and jars; the Akka simulator itself does not require building NetGameSim to compile or run tests.
 
